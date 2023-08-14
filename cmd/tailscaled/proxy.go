@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"strings"
 )
 
@@ -29,16 +28,9 @@ func httpProxyHandler(dialer func(ctx context.Context, netw, addr string) (net.C
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "CONNECT" {
 			backURL := r.RequestURI
-			if backURL == "*" {
+			if strings.HasPrefix(backURL, "/") || backURL == "*" {
 				http.Error(w, "bogus RequestURI; must be absolute URL or CONNECT", 400)
 				return
-			}
-			if strings.HasPrefix(backURL, "/") {
-				r.URL = url.URL{
-					Scheme: "http",
-					Host:   r.Host,
-					Path:   r.URL.Path,
-				}
 			}
 			rp.ServeHTTP(w, r)
 			return
