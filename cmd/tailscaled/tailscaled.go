@@ -125,17 +125,18 @@ var args struct {
 	// or comma-separated list thereof.
 	tunname string
 
-	cleanup        bool
-	debug          string
-	port           uint16
-	statepath      string
-	statedir       string
-	socketpath     string
-	birdSocketPath string
-	verbose        int
-	socksAddr      string // listen address for SOCKS5 server
-	httpProxyAddr  string // listen address for HTTP proxy server
-	disableLogs    bool
+	cleanup             bool
+	debug               string
+	port                uint16
+	statepath           string
+	statedir            string
+	socketpath          string
+	birdSocketPath      string
+	verbose             int
+	socksAddr           string // listen address for SOCKS5 server
+	httpProxyAddr       string // listen address for HTTP proxy server
+	httpProxySocketPath string // path to HTTP proxy socket
+	disableLogs         bool
 }
 
 var (
@@ -163,6 +164,7 @@ func main() {
 	flag.StringVar(&args.debug, "debug", "", "listen address ([ip]:port) of optional debug server")
 	flag.StringVar(&args.socksAddr, "socks5-server", "", `optional [ip]:port to run a SOCK5 server (e.g. "localhost:1080")`)
 	flag.StringVar(&args.httpProxyAddr, "outbound-http-proxy-listen", "", `optional [ip]:port to run an outbound HTTP proxy (e.g. "localhost:8080")`)
+	flag.StringVar(&args.httpProxySocketPath, "outbound-http-proxy-listen-unix", "", `optional Unix socket to run an outbound HTTP proxy`)
 	flag.StringVar(&args.tunname, "tun", defaultTunName(), `tunnel interface name; use "userspace-networking" (beta) to not use TUN`)
 	flag.Var(flagtype.PortValue(&args.port, defaultPort()), "port", "UDP port to listen on for WireGuard and peer-to-peer traffic; 0 means automatically select")
 	flag.StringVar(&args.statepath, "state", "", "absolute path of state file; use 'kube:<secret-name>' to use Kubernetes secrets or 'arn:aws:ssm:...' to store in AWS SSM; use 'mem:' to not store state and register as an ephemeral node. If empty and --statedir is provided, the default is <statedir>/tailscaled.state. Default: "+paths.DefaultTailscaledStateFile())
@@ -467,7 +469,7 @@ func getLocalBackend(ctx context.Context, logf logger.Logf, logID logid.PublicID
 		logPol.Logtail.SetNetMon(sys.NetMon.Get())
 	}
 
-	socksListener, httpProxyListener := mustStartProxyListeners(args.socksAddr, args.httpProxyAddr)
+	socksListener, httpProxyListener := mustStartProxyListeners(args.socksAddr, args.httpProxyAddr, args.httpProxySocketPath)
 
 	dialer := &tsdial.Dialer{Logf: logf} // mutated below (before used)
 	sys.Set(dialer)
@@ -714,7 +716,9 @@ func newNetstack(logf logger.Logf, sys *tsd.System) (*netstack.Impl, error) {
 //
 // socksListener and httpListener can be nil, if their respective
 // addrs are empty.
-func mustStartProxyListeners(socksAddr, httpAddr string) (socksListener, httpListener net.Listener) {
+// If httpSocketPath is non-empty, httpListener will be a unix socket and
+// httpAddr will be ignored.
+func mustStartProxyListeners(socksAddr, httpAddr, httpSocketPath string) (socksListener, httpListener net.Listener) {
 	if socksAddr == httpAddr && socksAddr != "" && !strings.HasSuffix(socksAddr, ":0") {
 		ln, err := net.Listen("tcp", socksAddr)
 		if err != nil {
@@ -744,6 +748,12 @@ func mustStartProxyListeners(socksAddr, httpAddr string) (socksListener, httpLis
 			// Log kernel-selected port number so integration tests
 			// can find it portably.
 			log.Printf("HTTP proxy listening on %v", httpListener.Addr())
+		}
+	}
+	if httpSocketPath != "" {
+		httpListener, err = net.Listen("unix", httpSocketPath)
+		if err != nil {
+			log.Fatalf("HTTP proxy listener: %v", err)
 		}
 	}
 
