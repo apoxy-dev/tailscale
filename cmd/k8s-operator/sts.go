@@ -941,6 +941,13 @@ func applyProxyClassToStatefulSet(pc *tsapi.ProxyClass, ss *appsv1.StatefulSet, 
 			base.Resources.Limits = overlay.Resources.Limits
 		}
 
+		if overlay.LivenessProbe != nil {
+			base.LivenessProbe = overlay.LivenessProbe
+		}
+		if overlay.ReadinessProbe != nil {
+			base.ReadinessProbe = overlay.ReadinessProbe
+		}
+
 		for _, e := range overlay.Env {
 			// Env vars configured via ProxyClass might override env
 			// vars that have been specified by the operator, i.e
